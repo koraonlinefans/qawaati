@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>قنواتي الفضائية</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<!-- HLS.js for M3U8 -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<!-- Shaka Player for MPD/DASH -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.6/shaka-player.compiled.js"></script>
+<!-- flv.js for FLV streams -->
+<script src="https://cdn.jsdelivr.net/npm/flv.js@latest/dist/flv.min.js"></script>
+<style>
+:root {
+  --bg: #080c18;
+  --surface: #0f1624;
+  --surface2: #171f30;
+  --surface3: #1e2840;
+  --accent: #f59e0b;
+  --accent2: #3b82f6;
+  --text: #f1f5f9;
+  --muted: #64748b;
+  --live: #ef4444;
+  --green: #10b981;
+  --border: rgba(255,255,255,0.07);
+  --glow: 0 0 30px rgba(245,158,11,0.2);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Cairo',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; overflow-x:hidden; }
+
+/* ===== LAYOUT ===== */
+.app { display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+
+/* ===== HEADER ===== */
+header {
+  display:flex; align-items:center; gap:12px;
+  padding:10px 20px;
+  background:rgba(8,12,24,0.97);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0; z-index:50;
+}
+.logo { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.logo-icon { width:38px; height:38px; background:linear-gradient(135deg,#f59e0b,#f97316); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; box-shadow:0 0 16px rgba(245,158,11,0.4); }
+.logo-text { font-size:18px; font-weight:900; background:linear-gradient(135deg,#f59e0b,#fbbf24); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.search-wrap { flex:1; max-width:420px; position:relative; }
+.search-wrap input { width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:9px 14px 9px 40px; color:var(--text); font-family:'Cairo',sans-serif; font-size:14px; outline:none; transition:border-color .2s; text-align:right; }
+.search-wrap input:focus { border-color:var(--accent); }
+.search-wrap input::placeholder { color:var(--muted); }
+.search-wrap .si { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none; }
+.header-btns { display:flex; gap:8px; margin-right:auto; }
+.hbtn { padding:8px 14px; border-radius:10px; border:1px solid var(--border); background:var(--surface2); color:var(--text); font-family:'Cairo',sans-serif; font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; white-space:nowrap; }
+.hbtn:hover, .hbtn.active { background:var(--accent); border-color:var(--accent); color:#000; }
+
+/* ===== MAIN BODY ===== */
+.body { display:flex; flex:1; overflow:hidden; }
+
+/* ===== SIDEBAR ===== */
+.sidebar { width:260px; flex-shrink:0; background:var(--surface); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+.sidebar-tabs { display:flex; border-bottom:1px solid var(--border); }
+.stab { flex:1; padding:10px; text-align:center; font-size:13px; font-weight:700; cursor:pointer; color:var(--muted); border-bottom:2px solid transparent; transition:all .2s; }
+.stab.active { color:var(--accent); border-bottom-color:var(--accent); }
+.cat-list { padding:8px; overflow-y:auto; flex:1; }
+.cat-item { padding:9px 12px; border-radius:10px; cursor:pointer; font-size:14px; font-weight:600; color:var(--muted); transition:all .2s; display:flex; align-items:center; justify-content:space-between; }
+.cat-item:hover { background:var(--surface2); color:var(--text); }
+.cat-item.active { background:rgba(245,158,11,0.1); color:var(--accent); }
+.cat-count { font-size:11px; background:var(--surface3); padding:2px 8px; border-radius:8px; }
+.ch-list { overflow-y:auto; flex:1; padding:6px; }
+.ch-item { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px; cursor:pointer; transition:all .2s; border:1px solid transparent; }
+.ch-item:hover { background:var(--surface2); }
+.ch-item.playing { background:rgba(245,158,11,0.1); border-color:rgba(245,158,11,0.3); }
+.ch-emoji { width:38px; height:38px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+.ch-info { flex:1; min-width:0; }
+.ch-nm { font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ch-cat { font-size:11px; color:var(--muted); }
+.live-dot { width:7px; height:7px; background:var(--live); border-radius:50%; flex-shrink:0; animation:blink 1.5s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ===== PLAYER AREA ===== */
+.player-area { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.player-wrap { position:relative; background:#000; flex-shrink:0; }
+.player-wrap video { width:100%; display:block; max-height:55vh; }
+.player-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; background:linear-gradient(135deg, #0a0e1a, #111827); }
+.player-overlay .big-emoji { font-size:80px; }
+.player-overlay .idle-text { color:var(--muted); font-size:16px; font-weight:600; }
+.player-controls-bar { display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(--surface); border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.now-playing { flex:1; min-width:0; }
+.np-name { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.np-sub { font-size:12px; color:var(--muted); }
+.pc-btns { display:flex; gap:8px; }
+.pc-btn { padding:7px 14px; border-radius:8px; border:1px solid var(--border); background:var(--surface2); color:var(--text); font-family:'Cairo',sans-serif; font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:6px; }
+.pc-btn:hover { border-color:var(--accent); color:var(--accent); }
+.pc-btn.danger:hover { border-color:var(--live); color:var(--live); }
+
+/* ===== CHANNELS GRID ===== */
+.grid-area { flex:1; overflow-y:auto; padding:16px; }
+.grid-title { font-size:16px; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+.grid-title .cnt { font-size:12px; background:var(--surface2); padding:2px 10px; border-radius:10px; color:var(--muted); }
+.channels-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 12px; cursor:pointer; transition:all .25s; display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; position:relative; animation:fadeUp .35s ease forwards; opacity:0; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+.card:hover { border-color:var(--accent); transform:translateY(-3px); box-shadow:var(--glow); }
+.card.playing { border-color:var(--accent); background:rgba(245,158,11,0.05); }
+.card-logo { width:60px; height:60px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:28px; }
+.card-name { font-size:13px; font-weight:700; line-height:1.3; }
+.card-badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:6px; }
+.badge-live { background:var(--live); color:#fff; animation:blink 1.5s infinite; }
+.badge-off { background:var(--surface2); color:var(--muted); }
+.badge-nourl { background:rgba(245,158,11,0.15); color:var(--accent); }
+.fav-btn { position:absolute; top:8px; left:8px; font-size:14px; cursor:pointer; color:var(--muted); transition:all .2s; }
+.fav-btn:hover { transform:scale(1.3); }
+.card.fav .fav-btn { color:var(--accent); }
+.empty-state { text-align:center; padding:60px 20px; color:var(--muted); }
+.empty-state .ei { font-size:56px; margin-bottom:12px; }
+
+/* ===== ADMIN PANEL ===== */
+.panel { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:200; backdrop-filter:blur(10px); align-items:center; justify-content:center; padding:16px; }
+.panel.open { display:flex; }
+.panel-box { background:var(--surface); border:1px solid var(--border); border-radius:20px; width:100%; max-width:560px; max-height:90vh; display:flex; flex-direction:column; animation:scaleIn .3s cubic-bezier(.34,1.56,.64,1); overflow:hidden; }
+@keyframes scaleIn { from{opacity:0;transform:scale(.85)} to{opacity:1;transform:scale(1)} }
+.panel-header { display:flex; align-items:center; justify-content:space-between; padding:18px 22px; border-bottom:1px solid var(--border); }
+.panel-title { font-size:17px; font-weight:700; }
+.panel-body { padding:22px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px; }
+.form-group { display:flex; flex-direction:column; gap:6px; }
+.form-group label { font-size:13px; font-weight:600; color:var(--muted); }
+.form-group input, .form-group select, .form-group textarea { background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; color:var(--text); font-family:'Cairo',sans-serif; font-size:14px; outline:none; transition:border-color .2s; text-align:right; resize:vertical; }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color:var(--accent); }
+.form-group select option { background:var(--surface2); }
+.form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.url-type-tabs { display:flex; gap:6px; }
+.url-tab { flex:1; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface2); color:var(--muted); font-family:'Cairo',sans-serif; font-size:13px; font-weight:600; cursor:pointer; text-align:center; transition:all .2s; }
+.url-tab.active { background:var(--accent); border-color:var(--accent); color:#000; }
+.panel-footer { padding:16px 22px; border-top:1px solid var(--border); display:flex; gap:10px; }
+.btn-primary { flex:1; padding:11px; border-radius:10px; border:none; background:var(--accent); color:#000; font-family:'Cairo',sans-serif; font-size:15px; font-weight:700; cursor:pointer; transition:opacity .2s; }
+.btn-primary:hover { opacity:.85; }
+.btn-secondary { padding:11px 18px; border-radius:10px; border:1px solid var(--border); background:var(--surface2); color:var(--text); font-family:'Cairo',sans-serif; font-size:14px; font-weight:600; cursor:pointer; }
+.close-x { width:36px; height:36px; border-radius:8px; background:var(--surface2); border:1px solid var(--border); color:var(--text); font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .2s; }
+.close-x:hover { background:var(--live); }
+.msg { padding:10px 14px; border-radius:10px; font-size:13px; font-weight:600; display:none; }
+.msg.ok { background:rgba(16,185,129,.15); color:var(--green); border:1px solid rgba(16,185,129,.3); display:block; }
+.msg.err { background:rgba(239,68,68,.15); color:var(--live); border:1px solid rgba(239,68,68,.3); display:block; }
+
+/* edit/delete on card */
+.card-actions { position:absolute; top:8px; right:8px; display:flex; gap:4px; opacity:0; transition:opacity .2s; }
+.card:hover .card-actions { opacity:1; }
+.ca-btn { width:24px; height:24px; border-radius:6px; border:1px solid var(--border); background:var(--surface2); color:var(--muted); font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .2s; }
+.ca-btn:hover { background:var(--surface3); color:var(--text); }
+
+/* import panel */
+.import-area { background:var(--surface2); border:2px dashed var(--border); border-radius:12px; padding:24px; text-align:center; cursor:pointer; transition:border-color .2s; }
+.import-area:hover { border-color:var(--accent); }
+.import-area textarea { width:100%; background:transparent; border:none; color:var(--text); font-family:monospace; font-size:12px; resize:vertical; min-height:120px; outline:none; text-align:left; direction:ltr; }
+
+/* notification toast */
+.toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(80px); background:var(--surface2); border:1px solid var(--accent); border-radius:12px; padding:12px 22px; font-size:14px; font-weight:600; color:var(--accent); z-index:999; transition:transform .3s; white-space:nowrap; }
+.toast.show { transform:translateX(-50%) translateY(0); }
+
+@media (max-width:700px) {
+  .sidebar { display:none; }
+  .channels-grid { grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); }
+  .form-row { grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">📡</div>
+    <div class="logo-text">قنواتي</div>
+  </div>
+  <div class="search-wrap">
+    <span class="si">🔍</span>
+    <input type="text" id="searchInput" placeholder="ابحث عن قناة..." oninput="renderAll()">
+  </div>
+  <div class="header-btns">
+    <button class="hbtn" onclick="openAddPanel()">➕ إضافة قناة</button>
+    <button class="hbtn" onclick="openImportPanel()">📥 استيراد M3U</button>
+    <button class="hbtn" id="proxyBtn" onclick="openProxyPanel()">⚙️ Proxy</button>
+  </div>
+</header>
+
+<!-- BODY -->
+<div class="body">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-tabs">
+      <div class="stab active" id="tab-cats" onclick="switchTab('cats')">📂 التصنيفات</div>
+      <div class="stab" id="tab-chs" onclick="switchTab('chs')">📺 القنوات</div>
+    </div>
+    <div class="cat-list" id="catList"></div>
+    <div class="ch-list" id="chList" style="display:none"></div>
+  </div>
+
+  <!-- PLAYER + GRID -->
+  <div class="player-area">
+    <!-- Video player -->
+    <div class="player-wrap" id="playerWrap">
+      <video id="videoEl" controls></video>
+      <div class="player-overlay" id="playerOverlay">
+        <div class="big-emoji">📡</div>
+        <div class="idle-text">اختر قناة للمشاهدة</div>
+      </div>
+    </div>
+
+    <!-- Controls bar -->
+    <div class="player-controls-bar">
+      <div class="now-playing">
+        <div class="np-name" id="npName">لا يوجد بث</div>
+        <div class="np-sub" id="npSub">اختر قناة من القائمة</div>
+      </div>
+      <div class="pc-btns">
+        <button class="pc-btn" onclick="toggleFullscreen()">⛶ ملء الشاشة</button>
+        <button class="pc-btn" onclick="stopPlayer()" id="stopBtn" style="display:none">⏹ إيقاف</button>
+        <button class="pc-btn" onclick="toggleFavCurrent()">⭐ <span id="favBtnTxt">مفضلة</span></button>
+      </div>
+    </div>
+
+    <!-- Grid -->
+    <div class="grid-area">
+      <div class="grid-title">📺 القنوات <span class="cnt" id="gridCount">0</span></div>
+      <div class="channels-grid" id="grid"></div>
+      <div class="empty-state" id="emptyState" style="display:none">
+        <div class="ei">📡</div>
+        <div>لا توجد قنوات تطابق البحث</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /body -->
+</div><!-- /app -->
+
+<!-- ADD/EDIT PANEL -->
+<div class="panel" id="addPanel">
+  <div class="panel-box">
+    <div class="panel-header">
+      <div class="panel-title" id="panelTitle">➕ إضافة قناة جديدة</div>
+      <button class="close-x" onclick="closePanel('addPanel')">✕</button>
+    </div>
+    <div class="panel-body">
+      <div id="formMsg" class="msg"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>اسم القناة *</label>
+          <input type="text" id="fName" placeholder="مثال: MBC 1">
+        </div>
+        <div class="form-group">
+          <label>أيقونة (Emoji)</label>
+          <input type="text" id="fEmoji" placeholder="📺" maxlength="4">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>التصنيف</label>
+          <input type="text" id="fCat" placeholder="مثال: أخبار" list="catSuggestions">
+          <datalist id="catSuggestions"></datalist>
+        </div>
+        <div class="form-group">
+          <label>لون الخلفية</label>
+          <input type="color" id="fColor" value="#1a2236" style="height:42px;padding:4px;">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>نوع الرابط</label>
+        <div class="url-type-tabs">
+          <div class="url-tab active" id="utM3U8" onclick="setUrlType('m3u8')">🎬 M3U8 (HLS)</div>
+          <div class="url-tab" id="utMPD" onclick="setUrlType('mpd')">📦 MPD (DASH)</div>
+          <div class="url-tab" id="utFLV" onclick="setUrlType('flv')">🎥 FLV</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>رابط البث * <span id="urlTypeLabel" style="color:var(--accent)">(M3U8)</span></label>
+        <input type="url" id="fUrl" placeholder="https://..." style="direction:ltr;text-align:left;">
+      </div>
+      <div class="form-group">
+        <label>رابط DRM / License (اختياري للمحتوى المحمي)</label>
+        <input type="url" id="fDrm" placeholder="https://..." style="direction:ltr;text-align:left;">
+      </div>
+      <div class="form-group">
+        <label>حالة القناة</label>
+        <select id="fLive">
+          <option value="live">🔴 بث مباشر</option>
+          <option value="vod">🎞️ فيديو عند الطلب</option>
+          <option value="off">⚫ غير متاح</option>
+        </select>
+      </div>
+      <input type="hidden" id="fEditId">
+    </div>
+    <div class="panel-footer">
+      <button class="btn-primary" onclick="saveChannel()">💾 حفظ القناة</button>
+      <button class="btn-secondary" onclick="closePanel('addPanel')">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<!-- IMPORT PANEL -->
+<div class="panel" id="importPanel">
+  <div class="panel-box">
+    <div class="panel-header">
+      <div class="panel-title">📥 استيراد من M3U</div>
+      <button class="close-x" onclick="closePanel('importPanel')">✕</button>
+    </div>
+    <div class="panel-body">
+      <div id="importMsg" class="msg"></div>
+      <div class="form-group">
+        <label>الصق محتوى ملف M3U هنا</label>
+        <div class="import-area">
+          <textarea id="m3uText" placeholder="#EXTM3U&#10;#EXTINF:-1 tvg-name=&quot;القناة الأولى&quot; group-title=&quot;أخبار&quot;,القناة الأولى&#10;https://example.com/stream.m3u8"></textarea>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>أو استيراد من رابط URL</label>
+        <input type="url" id="m3uUrl" placeholder="https://example.com/playlist.m3u" style="direction:ltr;text-align:left;">
+      </div>
+    </div>
+    <div class="panel-footer">
+      <button class="btn-primary" onclick="importM3U()">📥 استيراد</button>
+      <button class="btn-secondary" onclick="closePanel('importPanel')">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<!-- PROXY PANEL -->
+<div class="panel" id="proxyPanel">
+  <div class="panel-box">
+    <div class="panel-header">
+      <div class="panel-title">⚙️ إعدادات Proxy التلقائي</div>
+      <button class="close-x" onclick="closePanel('proxyPanel')">✕</button>
+    </div>
+    <div class="panel-body">
+      <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:12px;padding:14px;font-size:13px;line-height:1.8;color:#cbd5e1;">
+        🔄 <strong style="color:var(--accent)">كيف يعمل؟</strong><br>
+        لما تضيف رابط من فيسبوك أو تيك توك أو أي موقع فيه CORS بلوك،
+        التطبيق تلقائياً بيحوّل الرابط عبر Proxy سيرفر عشان يشتغل في المتصفح.<br><br>
+        🌐 <strong style="color:var(--accent)">Proxy مجاني جاهز:</strong> بيستخدم cors-anywhere العام — قد يكون بطيء.<br>
+        🚀 <strong style="color:var(--accent)">Proxy خاص:</strong> شغّل سيرفرك المحلي للسرعة الكاملة.
+      </div>
+      <div class="form-group">
+        <label>تفعيل Proxy التلقائي</label>
+        <div style="display:flex;gap:8px;">
+          <div class="url-tab active" id="proxyOn" onclick="setProxyMode(true)">✅ مفعّل</div>
+          <div class="url-tab" id="proxyOff" onclick="setProxyMode(false)">⛔ معطّل</div>
+        </div>
+      </div>
+      <div class="form-group" id="proxyUrlGroup">
+        <label>رابط الـ Proxy Server</label>
+        <input type="url" id="proxyUrlInput" placeholder="https://corsproxy.io/?" style="direction:ltr;text-align:left;">
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">
+          روابط جاهزة يمكنك تجربتها:
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+          <button class="pc-btn" style="font-size:11px;padding:5px 10px" onclick="setProxy('https://corsproxy.io/?url=')">corsproxy.io</button>
+          <button class="pc-btn" style="font-size:11px;padding:5px 10px" onclick="setProxy('https://api.allorigins.win/raw?url=')">allorigins</button>
+          <button class="pc-btn" style="font-size:11px;padding:5px 10px" onclick="setProxy('https://cors-anywhere.herokuapp.com/')">cors-anywhere</button>
+          <button class="pc-btn" style="font-size:11px;padding:5px 10px" onclick="setProxy('http://localhost:8080/')">🖥️ محلي :8080</button>
+          <button class="pc-btn" style="font-size:11px;padding:5px 10px" onclick="setProxy('http://localhost:3000/')">🖥️ محلي :3000</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>المواقع المحجوبة (بيطبّق عليها Proxy تلقائياً)</label>
+        <textarea id="blockedDomains" rows="4" style="font-size:12px;direction:ltr;text-align:left;font-family:monospace;">fbcdn.net
+tiktokcdn.com
+youtube.com
+twitch.tv
+akamaized.net</textarea>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">كل دومين في سطر منفصل</div>
+      </div>
+      <!-- COOKIES SECTION -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;">
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+          🍪 Cookies فيسبوك / تيك توك
+          <span style="font-size:11px;background:rgba(245,158,11,0.15);color:var(--accent);padding:2px 8px;border-radius:6px;">الحل السحري ✨</span>
+        </div>
+
+        <!-- شرح إزاي تجيب الكوكيز -->
+        <div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:12px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:700;color:#93c5fd;margin-bottom:8px;">📋 إزاي تجيب Cookies من المتصفح؟</div>
+          <div style="font-size:12px;color:#94a3b8;line-height:2;">
+            1️⃣ افتح <strong style="color:#f1f5f9">facebook.com</strong> أو <strong style="color:#f1f5f9">tiktok.com</strong> وادخل على حسابك<br>
+            2️⃣ اضغط <kbd style="background:#1e2840;padding:1px 6px;border-radius:4px;font-family:monospace;">F12</kbd> عشان تفتح DevTools<br>
+            3️⃣ روح تبويب <kbd style="background:#1e2840;padding:1px 6px;border-radius:4px;font-family:monospace;">Console</kbd><br>
+            4️⃣ الصق الكود ده واضغط Enter:<br>
+            <div style="background:#0a0e1a;border-radius:8px;padding:10px;margin:8px 0;direction:ltr;text-align:left;">
+              <code style="color:#f59e0b;font-size:12px;font-family:monospace;">copy(document.cookie)</code>
+            </div>
+            5️⃣ الكوكيز اتنسخت — الصقها في الخانة تحت 👇
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>🍪 Facebook Cookies</label>
+          <textarea id="fbCookies" rows="3" placeholder="c_user=...; xs=...; datr=...؛ الصق هنا" style="font-size:11px;direction:ltr;text-align:left;font-family:monospace;"></textarea>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">بتتبعت تلقائياً مع كل رابط fbcdn.net</div>
+        </div>
+
+        <div class="form-group">
+          <label>🍪 TikTok Cookies</label>
+          <textarea id="ttCookies" rows="3" placeholder="sessionid=...; tt_webid=...; الصق هنا" style="font-size:11px;direction:ltr;text-align:left;font-family:monospace;"></textarea>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">بتتبعت تلقائياً مع كل رابط tiktokcdn.com</div>
+        </div>
+
+        <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:10px;font-size:12px;color:#fca5a5;">
+          ⚠️ الكوكيز بتتحفظ في متصفحك بس (localStorage) ومش بتتبعت لأي سيرفر خارجي.
+        </div>
+      </div>
+
+      <div id="proxyTestResult" style="display:none;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;"></div>
+    </div>
+    <div class="panel-footer">
+      <button class="btn-primary" onclick="saveProxySettings()">💾 حفظ الإعدادات</button>
+      <button class="btn-secondary" onclick="testProxy()">🧪 اختبار الاتصال</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ========== STATE ==========
+let channels = JSON.parse(localStorage.getItem('qchannels') || '[]');
+let favorites = JSON.parse(localStorage.getItem('qfavs') || '[]');
+let proxySettings = JSON.parse(localStorage.getItem('qproxy') || JSON.stringify({
+  enabled: true,
+  url: 'https://corsproxy.io/?url=',
+  blockedDomains: ['fbcdn.net','tiktokcdn.com','youtube.com','twitch.tv','akamaized.net'],
+  fbCookies: '',
+  ttCookies: '',
+}));
+let activeCategory = 'الكل';
+let currentId = null;
+let urlType = 'm3u8';
+let hls = null;
+let shakaPlayer = null;
+let flvPlayer = null;
+let sidebarTab = 'cats';
+
+// Demo channels if empty
+if(channels.length === 0) {
+  channels = [
+    { id:uid(), name:'الجزيرة', cat:'أخبار', emoji:'🌍', color:'#0d3d50', url:'', urlType:'m3u8', drm:'', live:'live' },
+    { id:uid(), name:'العربية', cat:'أخبار', emoji:'📰', color:'#4c0519', url:'', urlType:'m3u8', drm:'', live:'live' },
+    { id:uid(), name:'beIN Sports 1', cat:'رياضة', emoji:'⚽', color:'#052e16', url:'', urlType:'m3u8', drm:'', live:'live' },
+    { id:uid(), name:'MBC 1', cat:'ترفيه', emoji:'🎬', color:'#2e1065', url:'', urlType:'m3u8', drm:'', live:'live' },
+    { id:uid(), name:'Cartoon Network', cat:'أطفال', emoji:'🎨', color:'#1e1b4b', url:'', urlType:'m3u8', drm:'', live:'live' },
+  ];
+  save();
+}
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+function save() {
+  localStorage.setItem('qchannels', JSON.stringify(channels));
+  localStorage.setItem('qfavs', JSON.stringify(favorites));
+  localStorage.setItem('qproxy', JSON.stringify(proxySettings));
+}
+
+// ========== AUTO-DETECT PROXY ==========
+// لو الموقع شغّال على سيرفر (مش file://)، يستخدم /proxy تلقائياً
+(function autoDetectProxy() {
+  const isOnServer = location.protocol === 'http:' || location.protocol === 'https:';
+  const isLocalFile = location.protocol === 'file:';
+  if(isOnServer) {
+    const autoUrl = `${location.origin}/proxy?url=`;
+    // لو مفيش إعدادات محفوظة، أو كانت بتستخدم proxy تاني، حدّث تلقائياً
+    const saved = localStorage.getItem('qproxy');
+    if(!saved) {
+      proxySettings.url = autoUrl;
+      proxySettings.enabled = true;
+      save();
+    } else {
+      const parsed = JSON.parse(saved);
+      // لو مش بيستخدم سيرفره، حدّثه
+      if(!parsed.url || parsed.url.includes('corsproxy') || parsed.url.includes('allorigins') || parsed.url.includes('localhost')) {
+        parsed.url = autoUrl;
+        parsed.enabled = true;
+        Object.assign(proxySettings, parsed);
+        save();
+      }
+    }
+    console.log('✅ Auto Proxy:', proxySettings.url);
+  }
+})();
+
+// ========== PROXY ==========
+function applyProxy(url) {
+  if(!proxySettings.enabled || !url) return url;
+  const isBlocked = proxySettings.blockedDomains.some(d => url.includes(d));
+  if(!isBlocked) return url;
+  const p = proxySettings.url || '';
+  // handle different proxy url styles
+  if(p.includes('?url=') || p.includes('?')) return p + encodeURIComponent(url);
+  return p + url;
+}
+
+function openProxyPanel() {
+  document.getElementById('proxyUrlInput').value = proxySettings.url || '';
+  document.getElementById('blockedDomains').value = (proxySettings.blockedDomains||[]).join('\n');
+  document.getElementById('fbCookies').value = proxySettings.fbCookies || '';
+  document.getElementById('ttCookies').value = proxySettings.ttCookies || '';
+  setProxyMode(proxySettings.enabled);
+  document.getElementById('proxyTestResult').style.display='none';
+  document.getElementById('proxyPanel').classList.add('open');
+  document.getElementById('proxyBtn').classList.toggle('active', proxySettings.enabled);
+}
+
+function setProxyMode(on) {
+  proxySettings.enabled = on;
+  document.getElementById('proxyOn').classList.toggle('active', on);
+  document.getElementById('proxyOff').classList.toggle('active', !on);
+  document.getElementById('proxyUrlGroup').style.opacity = on ? '1' : '0.4';
+  document.getElementById('proxyBtn').classList.toggle('active', on);
+}
+
+function setProxy(url) {
+  document.getElementById('proxyUrlInput').value = url;
+  proxySettings.url = url;
+}
+
+function saveProxySettings() {
+  proxySettings.url = document.getElementById('proxyUrlInput').value.trim();
+  proxySettings.blockedDomains = document.getElementById('blockedDomains').value
+    .split('\n').map(d=>d.trim()).filter(Boolean);
+  proxySettings.fbCookies = document.getElementById('fbCookies').value.trim();
+  proxySettings.ttCookies = document.getElementById('ttCookies').value.trim();
+  save();
+  toast('✔ تم حفظ الإعدادات' + (proxySettings.fbCookies ? ' + Cookies فيسبوك ✅' : ''));
+  closePanel('proxyPanel');
+}
+
+async function testProxy() {
+  const result = document.getElementById('proxyTestResult');
+  const testUrl = 'https://httpbin.org/get';
+  const proxied = applyProxy(testUrl.replace('httpbin.org','fbcdn.net').replace('/get',''));
+  result.style.display='block';
+  result.style.background='rgba(59,130,246,0.1)';
+  result.style.border='1px solid rgba(59,130,246,0.3)';
+  result.style.color='#93c5fd';
+  result.textContent='🔄 جاري الاختبار...';
+  try {
+    const r = await fetch(applyProxy('https://httpbin.org/get'), {signal: AbortSignal.timeout(5000)});
+    if(r.ok) {
+      result.style.background='rgba(16,185,129,0.1)';
+      result.style.border='1px solid rgba(16,185,129,0.3)';
+      result.style.color='#6ee7b7';
+      result.textContent='✅ الـ Proxy يعمل بنجاح!';
+    } else {
+      throw new Error('status ' + r.status);
+    }
+  } catch(e) {
+    result.style.background='rgba(239,68,68,0.1)';
+    result.style.border='1px solid rgba(239,68,68,0.3)';
+    result.style.color='#fca5a5';
+    result.textContent='❌ فشل الاتصال — جرّب proxy مختلف';
+  }
+}
+
+// ========== RENDER ==========
+function getFiltered() {
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  let list = channels;
+  if(activeCategory === 'المفضلة') list = list.filter(c => favorites.includes(c.id));
+  else if(activeCategory !== 'الكل') list = list.filter(c => c.cat === activeCategory);
+  if(q) list = list.filter(c => c.name.toLowerCase().includes(q) || (c.cat||'').toLowerCase().includes(q));
+  return list;
+}
+
+function getCategories() {
+  const cats = ['الكل','المفضلة',...new Set(channels.map(c=>c.cat).filter(Boolean))];
+  return cats;
+}
+
+function renderAll() {
+  renderCatList();
+  renderChList();
+  renderGrid();
+}
+
+function renderCatList() {
+  const cats = getCategories();
+  const el = document.getElementById('catList');
+  // update datalist
+  const dl = document.getElementById('catSuggestions');
+  dl.innerHTML = [...new Set(channels.map(c=>c.cat).filter(Boolean))].map(c=>`<option value="${c}">`).join('');
+
+  el.innerHTML = cats.map(cat => {
+    const cnt = cat==='الكل' ? channels.length : cat==='المفضلة' ? favorites.length : channels.filter(c=>c.cat===cat).length;
+    return `<div class="cat-item ${activeCategory===cat?'active':''}" onclick="selectCat('${cat}')">
+      <span>${catIcon(cat)} ${cat}</span>
+      <span class="cat-count">${cnt}</span>
+    </div>`;
+  }).join('');
+}
+
+function catIcon(cat) {
+  const m = {'الكل':'📺','المفضلة':'⭐','أخبار':'📰','رياضة':'⚽','ترفيه':'🎭','أطفال':'🧸','دينية':'🕌','أفلام':'🎬'};
+  return m[cat]||'📡';
+}
+
+function renderChList() {
+  const list = getFiltered();
+  const el = document.getElementById('chList');
+  el.innerHTML = list.map(c => `
+    <div class="ch-item ${currentId===c.id?'playing':''}" onclick="playChannel('${c.id}')">
+      <div class="ch-emoji" style="background:${c.color||'#1a2236'}">${c.emoji||'📺'}</div>
+      <div class="ch-info">
+        <div class="ch-nm">${c.name}</div>
+        <div class="ch-cat">${c.cat||''}</div>
+      </div>
+      ${c.live==='live'?'<div class="live-dot"></div>':''}
+    </div>
+  `).join('');
+}
+
+function renderGrid() {
+  const list = getFiltered();
+  const grid = document.getElementById('grid');
+  const empty = document.getElementById('emptyState');
+  document.getElementById('gridCount').textContent = list.length;
+  if(!list.length){ grid.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  grid.innerHTML = list.map((c,i) => {
+    const hasUrl = !!c.url;
+    const badgeCls = c.live==='live' ? 'badge-live' : hasUrl ? 'badge-off' : 'badge-nourl';
+    const badgeTxt = !hasUrl ? 'بدون رابط' : c.live==='live' ? 'مباشر' : c.live==='vod' ? 'فيديو' : 'غير متاح';
+    return `<div class="card ${currentId===c.id?'playing':''} ${favorites.includes(c.id)?'fav':''}" onclick="playChannel('${c.id}')" style="animation-delay:${i*.03}s">
+      <div class="card-actions">
+        <button class="ca-btn" onclick="event.stopPropagation();editChannel('${c.id}')" title="تعديل">✏️</button>
+        <button class="ca-btn" onclick="event.stopPropagation();deleteChannel('${c.id}')" title="حذف">🗑️</button>
+      </div>
+      <span class="fav-btn" onclick="event.stopPropagation();toggleFav('${c.id}')">⭐</span>
+      <div class="card-logo" style="background:${c.color||'#1a2236'}">${c.emoji||'📺'}</div>
+      <div class="card-name">${c.name}</div>
+      <span class="card-badge ${badgeCls}">${badgeTxt}</span>
+    </div>`;
+  }).join('');
+}
+
+// ========== CATEGORIES ==========
+function selectCat(cat) {
+  activeCategory = cat;
+  renderAll();
+}
+
+// ========== SIDEBAR TABS ==========
+function switchTab(t) {
+  sidebarTab = t;
+  document.getElementById('tab-cats').classList.toggle('active', t==='cats');
+  document.getElementById('tab-chs').classList.toggle('active', t==='chs');
+  document.getElementById('catList').style.display = t==='cats' ? '' : 'none';
+  document.getElementById('chList').style.display = t==='chs' ? '' : 'none';
+}
+
+// ========== PLAYER ==========
+function playChannel(id) {
+  const ch = channels.find(c=>c.id===id);
+  if(!ch) return;
+  currentId = id;
+
+  document.getElementById('npName').textContent = ch.name;
+  document.getElementById('npSub').textContent = (ch.cat||'') + (ch.url ? ' · ' + ch.urlType.toUpperCase() : ' · بدون رابط');
+  document.getElementById('favBtnTxt').textContent = favorites.includes(id) ? 'إزالة' : 'مفضلة';
+  document.getElementById('stopBtn').style.display = 'flex';
+
+  const overlay = document.getElementById('playerOverlay');
+  const video = document.getElementById('videoEl');
+
+  if(!ch.url) {
+    overlay.style.display='flex';
+    overlay.innerHTML=`<div class="big-emoji">${ch.emoji||'📡'}</div><div class="idle-text">هذه القناة ليس لها رابط بعد — اضغط ✏️ لإضافة رابط</div>`;
+    stopPlayer(true);
+    renderAll(); return;
+  }
+
+  overlay.style.display='none';
+
+  // destroy previous
+  if(hls) { hls.destroy(); hls=null; }
+  if(shakaPlayer) { shakaPlayer.destroy(); shakaPlayer=null; }
+  if(flvPlayer) { flvPlayer.destroy(); flvPlayer=null; }
+  video.src='';
+
+  const streamUrl = applyProxy(ch.url);
+  const wasProxied = streamUrl !== ch.url;
+  if(wasProxied) document.getElementById('npSub').innerHTML += ' &nbsp;<span style="color:var(--accent);font-size:11px">🔄 Proxy</span>';
+
+  // اختار الكوكيز المناسبة للرابط
+  function getCookiesForUrl(url) {
+    if(url.includes('fbcdn.net') || url.includes('facebook.com')) return proxySettings.fbCookies || '';
+    if(url.includes('tiktokcdn.com') || url.includes('tiktok.com')) return proxySettings.ttCookies || '';
+    return '';
+  }
+  const cookies = getCookiesForUrl(ch.url);
+  if(cookies) document.getElementById('npSub').innerHTML += ' &nbsp;<span style="color:#10b981;font-size:11px">🍪 Cookie</span>';
+
+  if(ch.urlType==='mpd') {
+    shaka.polyfill.installAll();
+    shakaPlayer = new shaka.Player(video);
+    // inject cookies as headers in Shaka
+    if(cookies) {
+      shakaPlayer.getNetworkingEngine().registerRequestFilter((type, request) => {
+        request.headers['Cookie'] = cookies;
+        request.headers['Referer'] = ch.url.includes('tiktok') ? 'https://www.tiktok.com/' : 'https://www.facebook.com/';
+        request.headers['Origin'] = ch.url.includes('tiktok') ? 'https://www.tiktok.com' : 'https://www.facebook.com';
+      });
+    }
+    if(ch.drm) {
+      shakaPlayer.configure({ drm:{ servers:{ 'com.widevine.alpha': ch.drm } } });
+    }
+    shakaPlayer.configure({ streaming: { bufferingGoal: 10, rebufferingGoal: 2 } });
+    shakaPlayer.load(streamUrl).then(()=>video.play()).catch(e=>showOverlayError(ch, e));
+
+  } else if(ch.urlType==='flv') {
+    if(flvjs.isSupported()) {
+      const headers = {};
+      if(cookies) {
+        headers['Cookie'] = cookies;
+        headers['Referer'] = ch.url.includes('tiktok') ? 'https://www.tiktok.com/' : 'https://www.facebook.com/';
+      }
+      flvPlayer = flvjs.createPlayer({
+        type: 'flv',
+        url: streamUrl,
+        isLive: ch.live === 'live',
+        headers,
+      }, { enableWorker: true, lazyLoadMaxDuration: 3*60, seekType: 'range' });
+      flvPlayer.attachMediaElement(video);
+      flvPlayer.load();
+      flvPlayer.play();
+      flvPlayer.on(flvjs.Events.ERROR, (errType, errDetail) => showOverlayError(ch, errType+': '+errDetail));
+    } else {
+      showOverlayError(ch, 'المتصفح لا يدعم FLV');
+    }
+
+  } else {
+    // HLS — inject cookies via XHR override
+    if(Hls.isSupported()) {
+      const hlsConfig = {};
+      if(cookies) {
+        hlsConfig.xhrSetup = (xhr, url) => {
+          xhr.setRequestHeader('Cookie', cookies);
+          xhr.withCredentials = true;
+        };
+      }
+      hls = new Hls(hlsConfig);
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, ()=>video.play());
+      hls.on(Hls.Events.ERROR, (_,d)=>{ if(d.fatal) showOverlayError(ch); });
+    } else if(video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = streamUrl;
+      video.play();
+    } else {
+      showOverlayError(ch, 'المتصفح لا يدعم HLS');
+    }
+  }
+
+  renderAll();
+}
+
+function showOverlayError(ch, e) {
+  const overlay = document.getElementById('playerOverlay');
+  overlay.style.display='flex';
+  overlay.innerHTML=`<div class="big-emoji">⚠️</div><div class="idle-text">تعذّر تشغيل القناة — تحقق من الرابط</div>`;
+  console.error(e);
+}
+
+function stopPlayer(silent) {
+  const video = document.getElementById('videoEl');
+  if(hls){ hls.destroy(); hls=null; }
+  if(shakaPlayer){ shakaPlayer.destroy(); shakaPlayer=null; }
+  if(flvPlayer){ flvPlayer.destroy(); flvPlayer=null; }
+  video.pause(); video.src='';
+  if(!silent) {
+    currentId=null;
+    document.getElementById('playerOverlay').style.display='flex';
+    document.getElementById('playerOverlay').innerHTML=`<div class="big-emoji">📡</div><div class="idle-text">اختر قناة للمشاهدة</div>`;
+    document.getElementById('npName').textContent='لا يوجد بث';
+    document.getElementById('npSub').textContent='اختر قناة من القائمة';
+    document.getElementById('stopBtn').style.display='none';
+    renderAll();
+  }
+}
+
+function toggleFullscreen() {
+  const wrap = document.getElementById('playerWrap');
+  if(!document.fullscreenElement) wrap.requestFullscreen();
+  else document.exitFullscreen();
+}
+
+// ========== FAVORITES ==========
+function toggleFav(id) {
+  if(favorites.includes(id)) favorites=favorites.filter(f=>f!==id);
+  else favorites.push(id);
+  save();
+  document.getElementById('favBtnTxt').textContent = favorites.includes(currentId)?'إزالة':'مفضلة';
+  renderAll();
+}
+function toggleFavCurrent() { if(currentId) toggleFav(currentId); }
+
+// ========== ADD / EDIT PANEL ==========
+function setUrlType(t) {
+  urlType=t;
+  document.getElementById('utM3U8').classList.toggle('active',t==='m3u8');
+  document.getElementById('utMPD').classList.toggle('active',t==='mpd');
+  document.getElementById('utFLV').classList.toggle('active',t==='flv');
+  const labels = { m3u8:'(M3U8 / HLS)', mpd:'(MPD / DASH)', flv:'(FLV)' };
+  document.getElementById('urlTypeLabel').textContent = labels[t]||'';
+}
+
+function openAddPanel(prefill) {
+  document.getElementById('panelTitle').textContent = '➕ إضافة قناة جديدة';
+  document.getElementById('fEditId').value='';
+  document.getElementById('fName').value = prefill?.name||'';
+  document.getElementById('fEmoji').value = prefill?.emoji||'📺';
+  document.getElementById('fCat').value = prefill?.cat||'';
+  document.getElementById('fColor').value = prefill?.color||'#1a2236';
+  document.getElementById('fUrl').value = prefill?.url||'';
+  document.getElementById('fDrm').value = prefill?.drm||'';
+  document.getElementById('fLive').value = prefill?.live||'live';
+  setUrlType(prefill?.urlType||'m3u8');
+  document.getElementById('formMsg').className='msg';
+  document.getElementById('addPanel').classList.add('open');
+}
+
+function editChannel(id) {
+  const ch = channels.find(c=>c.id===id);
+  if(!ch) return;
+  openAddPanel(ch);
+  document.getElementById('panelTitle').textContent = '✏️ تعديل القناة';
+  document.getElementById('fEditId').value = id;
+}
+
+function deleteChannel(id) {
+  if(!confirm('هل تريد حذف هذه القناة؟')) return;
+  channels = channels.filter(c=>c.id!==id);
+  favorites = favorites.filter(f=>f!==id);
+  if(currentId===id) stopPlayer();
+  save(); renderAll(); toast('تم حذف القناة');
+}
+
+function saveChannel() {
+  const name = document.getElementById('fName').value.trim();
+  const url  = document.getElementById('fUrl').value.trim();
+  const msg  = document.getElementById('formMsg');
+  if(!name){ msg.textContent='اسم القناة مطلوب'; msg.className='msg err'; return; }
+  const editId = document.getElementById('fEditId').value;
+  const ch = {
+    id: editId || uid(),
+    name, url,
+    emoji: document.getElementById('fEmoji').value||'📺',
+    cat:   document.getElementById('fCat').value.trim()||'عام',
+    color: document.getElementById('fColor').value,
+    urlType,
+    drm:   document.getElementById('fDrm').value.trim(),
+    live:  document.getElementById('fLive').value,
+  };
+  if(editId) {
+    const idx = channels.findIndex(c=>c.id===editId);
+    channels[idx]=ch;
+  } else {
+    channels.push(ch);
+  }
+  save(); renderAll();
+  msg.textContent = editId ? 'تم تعديل القناة ✔' : 'تمت إضافة القناة ✔';
+  msg.className='msg ok';
+  setTimeout(()=>{ closePanel('addPanel'); },900);
+}
+
+// ========== IMPORT M3U ==========
+function openImportPanel() {
+  document.getElementById('m3uText').value='';
+  document.getElementById('m3uUrl').value='';
+  document.getElementById('importMsg').className='msg';
+  document.getElementById('importPanel').classList.add('open');
+}
+
+function importM3U() {
+  const raw = document.getElementById('m3uText').value.trim();
+  const msg = document.getElementById('importMsg');
+  if(!raw){ msg.textContent='الرجاء لصق محتوى M3U أولاً'; msg.className='msg err'; return; }
+  const parsed = parseM3U(raw);
+  if(!parsed.length){ msg.textContent='لم يتم العثور على قنوات صالحة في الملف'; msg.className='msg err'; return; }
+  parsed.forEach(c=>channels.push(c));
+  save(); renderAll();
+  msg.textContent=`تم استيراد ${parsed.length} قناة بنجاح ✔`; msg.className='msg ok';
+  setTimeout(()=>closePanel('importPanel'),1200);
+  toast(`✔ تم استيراد ${parsed.length} قناة`);
+}
+
+function parseM3U(text) {
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  const result=[];
+  for(let i=0;i<lines.length;i++) {
+    if(lines[i].startsWith('#EXTINF')) {
+      const meta=lines[i];
+      const url=lines[i+1]||'';
+      if(!url || url.startsWith('#')) continue;
+      const name = meta.includes(',') ? meta.split(',').slice(1).join(',').trim() : 'قناة';
+      const tvgName = meta.match(/tvg-name="([^"]*)"/)?.[1] || name;
+      const group = meta.match(/group-title="([^"]*)"/)?.[1] || 'عام';
+      const logo = meta.match(/tvg-logo="([^"]*)"/)?.[1] || '';
+      const urlT = url.includes('.mpd') ? 'mpd' : url.includes('.flv') ? 'flv' : 'm3u8';
+      result.push({ id:uid(), name:tvgName, cat:group, emoji:'📺', color:'#1a2236', url, urlType:urlT, drm:'', live:'live' });
+      i++;
+    }
+  }
+  return result;
+}
+
+// ========== UTILS ==========
+function closePanel(id) { document.getElementById(id).classList.remove('open'); }
+document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ closePanel('addPanel'); closePanel('importPanel'); } });
+document.getElementById('addPanel').addEventListener('click', e=>{ if(e.target===e.currentTarget) closePanel('addPanel'); });
+document.getElementById('importPanel').addEventListener('click', e=>{ if(e.target===e.currentTarget) closePanel('importPanel'); });
+
+function toast(msg) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+// ========== INIT ==========
+renderAll();
+</script>
+</body>
+</html>
