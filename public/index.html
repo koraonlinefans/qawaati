@@ -11,6 +11,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.6/shaka-player.compiled.js"></script>
 <!-- flv.js for FLV streams -->
 <script src="https://cdn.jsdelivr.net/npm/flv.js@latest/dist/flv.min.js"></script>
+<!-- Clappr Player -->
+<script src="https://cdn.jsdelivr.net/npm/clappr@latest/dist/clappr.min.js"></script>
 <style>
 :root {
   --bg: #080c18;
@@ -197,9 +199,9 @@ header {
 
   <!-- PLAYER + GRID -->
   <div class="player-area">
-    <!-- Video player -->
+    <!-- Clappr Player -->
     <div class="player-wrap" id="playerWrap">
-      <video id="videoEl" controls></video>
+      <div id="clapprContainer" style="width:100%;height:100%;"></div>
       <div class="player-overlay" id="playerOverlay">
         <div class="big-emoji">📡</div>
         <div class="idle-text">اختر قناة للمشاهدة</div>
@@ -654,6 +656,8 @@ function switchTab(t) {
 }
 
 // ========== PLAYER ==========
+let clapprPlayer = null;
+
 function playChannel(id) {
   const ch = channels.find(c=>c.id===id);
   if(!ch) return;
@@ -665,7 +669,60 @@ function playChannel(id) {
   document.getElementById('stopBtn').style.display = 'flex';
 
   const overlay = document.getElementById('playerOverlay');
-  const video = document.getElementById('videoEl');
+
+  if(!ch.url) {
+    overlay.style.display='flex';
+    overlay.innerHTML=`<div class="big-emoji">${ch.emoji||'📡'}</div><div class="idle-text">هذه القناة ليس لها رابط — اضغط ✏️ لإضافة رابط</div>`;
+    stopPlayer(true);
+    renderAll(); return;
+  }
+
+  overlay.style.display='none';
+
+  // destroy previous player
+  if(clapprPlayer) { try { clapprPlayer.destroy(); } catch(e){} clapprPlayer=null; }
+  document.getElementById('clapprContainer').innerHTML = '';
+
+  const streamUrl = applyProxy(ch.url);
+  const wasProxied = streamUrl !== ch.url;
+  if(wasProxied) document.getElementById('npSub').innerHTML += ' &nbsp;<span style="color:var(--accent);font-size:11px">🔄 Proxy</span>';
+
+  // تحديد mime type
+  const mimeTypes = {
+    'mpd':  'application/dash+xml',
+    'flv':  'video/x-flv',
+    'm3u8': 'application/x-mpegURL',
+  };
+  const mimeType = mimeTypes[ch.urlType] || 'application/x-mpegURL';
+
+  try {
+    clapprPlayer = new Clappr.Player({
+      source: streamUrl,
+      mimeType: mimeType,
+      parentId: '#clapprContainer',
+      width: '100%',
+      height: '100%',
+      autoPlay: true,
+      mute: false,
+      maxBufferLength: 30,
+      playback: {
+        hlsjsConfig: {
+          enableWorker: true,
+          lowLatencyMode: true,
+          backBufferLength: 90,
+        }
+      },
+      events: {
+        onError: (e) => showOverlayError(ch, e),
+        onReady: () => { overlay.style.display='none'; }
+      }
+    });
+  } catch(e) {
+    showOverlayError(ch, e.message);
+  }
+
+  renderAll();
+}
 
   if(!ch.url) {
     overlay.style.display='flex';
@@ -767,11 +824,8 @@ function showOverlayError(ch, e) {
 }
 
 function stopPlayer(silent) {
-  const video = document.getElementById('videoEl');
-  if(hls){ hls.destroy(); hls=null; }
-  if(shakaPlayer){ shakaPlayer.destroy(); shakaPlayer=null; }
-  if(flvPlayer){ flvPlayer.destroy(); flvPlayer=null; }
-  video.pause(); video.src='';
+  if(clapprPlayer) { try { clapprPlayer.destroy(); } catch(e){} clapprPlayer=null; }
+  document.getElementById('clapprContainer').innerHTML = '';
   if(!silent) {
     currentId=null;
     document.getElementById('playerOverlay').style.display='flex';
@@ -785,6 +839,7 @@ function stopPlayer(silent) {
 
 function toggleFullscreen() {
   const wrap = document.getElementById('playerWrap');
+  if(clapprPlayer) { clapprPlayer.isFullscreen() ? clapprPlayer.exitFullscreen() : clapprPlayer.enterFullscreen(); return; }
   if(!document.fullscreenElement) wrap.requestFullscreen();
   else document.exitFullscreen();
 }
